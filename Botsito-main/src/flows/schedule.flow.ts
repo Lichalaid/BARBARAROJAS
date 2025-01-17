@@ -47,11 +47,11 @@ const generatePromptFilter = (history: string): string => {
 
 // Horarios personalizados por día
 const customSchedule = {
-    monday: { earliestHour: 9, latestHour: 16 },
-    tuesday: { earliestHour: 10, latestHour: 18 },
-    wednesday: { earliestHour: 9, latestHour: 15 },
-    thursday: { earliestHour: 11, latestHour: 17 },
-    friday: { earliestHour: 9, latestHour: 14 },
+    monday: { earliestHour: 12, latestHour: 16 },
+    tuesday: { earliestHour: 10, latestHour: 14 },
+    wednesday: { earliestHour: 12, latestHour: 18 },
+    thursday: { earliestHour: 10, latestHour: 14 },
+    friday: { earliestHour: 13, latestHour: 17 },
 };
 
 const flowSchedule = addKeyword(EVENTS.ACTION)
