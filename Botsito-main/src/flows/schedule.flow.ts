@@ -11,11 +11,12 @@ import {
     format,
     getHours,
     getDay,
-    addDays,setHours,setMinutes,setSeconds,isAfter,isBefore as dateFnsIsBefore,
+    addDays, setHours, setMinutes, setSeconds, isAfter, isBefore as dateFnsIsBefore,
     isBefore
 } from "date-fns";
 
 const DURATION_MEET = parseInt(process.env.DURATION_MEET ?? "60", 10);
+const MINIMUM_NOTICE = 120; // Minimum notice time in minutes
 
 interface CalendarEntry {
     name: string;
@@ -44,12 +45,14 @@ const generatePromptFilter = (history: string): string => {
     );
 };
 
- // Proponer el siguiente horario disponible
- const earliestHour = 9;
- const latestHour = 16;
- 
-
-let lastScheduledDate: Date | null = null; // Variable para almacenar el último turno agendado
+// Horarios personalizados por día
+const customSchedule = {
+    monday: { earliestHour: 9, latestHour: 16 },
+    tuesday: { earliestHour: 10, latestHour: 18 },
+    wednesday: { earliestHour: 9, latestHour: 15 },
+    thursday: { earliestHour: 11, latestHour: 17 },
+    friday: { earliestHour: 9, latestHour: 14 },
+};
 
 const flowSchedule = addKeyword(EVENTS.ACTION)
     .addAction(async (ctx, { extensions, state, flowDynamic, endFlow }) => {
@@ -94,30 +97,31 @@ const flowSchedule = addKeyword(EVENTS.ACTION)
                     ({ fromDate, toDate }) =>
                         nextAvailableDate < toDate && addMinutes(nextAvailableDate, DURATION_MEET) > fromDate
                 );
-                if (!isNextDateOccupied) {
+                
+                const minutesUntilNextDate = (nextAvailableDate.getTime() - new Date().getTime()) / 60000;
+
+                if (!isNextDateOccupied && minutesUntilNextDate >= MINIMUM_NOTICE) {
                     foundAvailable = true;
                 }
             }
 
-           
+            const dayOfWeek = getDay(nextAvailableDate);
+            const currentDaySchedule = Object.values(customSchedule)[dayOfWeek - 1] || { earliestHour: 9, latestHour: 16 };
+
             // Aseguramos que el horario esté dentro del rango permitido
             if (nextAvailableDate) {
-                const startOfDay = setHours(setMinutes(setSeconds(nextAvailableDate, 0), 0), earliestHour); // 9:00
-                const endOfDay = setHours(setMinutes(setSeconds(nextAvailableDate, 0), 0), latestHour); // 16:00
+                const startOfDay = setHours(setMinutes(setSeconds(nextAvailableDate, 0), 0), currentDaySchedule.earliestHour); // Hora inicio personalizada
+                const endOfDay = setHours(setMinutes(setSeconds(nextAvailableDate, 0), 0), currentDaySchedule.latestHour); // Hora fin personalizada
             
-                // Si el horario propuesto es antes de las 9:00, lo ajustamos a las 9:00
                 if (isBefore(nextAvailableDate, startOfDay)) {
                     nextAvailableDate = startOfDay;
-                }
-                // Si el horario propuesto es después de las 16:00, ajustamos al día siguiente a las 9:00
-                else if (isAfter(nextAvailableDate, endOfDay)) {
-                    const nextDay = new Date(nextAvailableDate);
-                    nextDay.setDate(nextDay.getDate() + 1);
-                    nextAvailableDate = setHours(setMinutes(setSeconds(nextDay, 0), 0), earliestHour); // 9:00 del día siguiente
+                } else if (isAfter(nextAvailableDate, endOfDay)) {
+                    const nextDay = addDays(nextAvailableDate, 1);
+                    const nextDaySchedule = Object.values(customSchedule)[(dayOfWeek % 7)];
+                    nextAvailableDate = setHours(setMinutes(setSeconds(nextDay, 0), 0), nextDaySchedule.earliestHour);
                 }
             }
-            
-            // Formateamos y enviamos el mensaje
+
             const formattedDate = format(nextAvailableDate, "yyyy/MM/dd HH:mm:ss");
             const msg = `El horario más cercano disponible es: ${formattedDate}. ¿Confirmo tu reserva en este horario?`;
             await flowDynamic(msg);
@@ -126,9 +130,11 @@ const flowSchedule = addKeyword(EVENTS.ACTION)
             return endFlow();
         }
 
-        // Validar horarios laborales (9:00 - 16:00)
         const desiredHour = getHours(desiredDate);
-        if (desiredHour < earliestHour || desiredHour > latestHour) {
+        const dayOfWeek = getDay(desiredDate);
+        const currentDaySchedule = Object.values(customSchedule)[dayOfWeek - 1] || { earliestHour: 9, latestHour: 16 };
+
+        if (desiredHour < currentDaySchedule.earliestHour || desiredHour > currentDaySchedule.latestHour) {
             const msg =
                 "Lo siento, esa hora está fuera del horario laboral. ¿Alguna otra fecha y hora?";
             await flowDynamic(msg);
@@ -136,8 +142,6 @@ const flowSchedule = addKeyword(EVENTS.ACTION)
             return endFlow();
         }
 
-        // Validar fines de semana
-        const dayOfWeek = getDay(desiredDate);
         if (dayOfWeek === 0 || dayOfWeek === 6) {
             const msg =
                 "Lo siento, no trabajamos los fines de semana. Por favor, indícame otra fecha y hora.";
@@ -146,50 +150,15 @@ const flowSchedule = addKeyword(EVENTS.ACTION)
             return endFlow();
         }
 
-        // Confirmar disponibilidad y sugerir horario
         const formattedDate = format(desiredDate, "yyyy/MM/dd HH:mm:ss");
         const msg = `¡Perfecto! El horario ${formattedDate} está disponible. ¿Confirmo tu reserva? `;
         await flowDynamic(msg);
         await handleHistory({ content: msg, role: "assistant" }, state);
 
-        // Actualizar el estado con la fecha deseada
-        lastScheduledDate = desiredDate; // Guardar la última fecha agendada
         await state.update({ desiredDate });
     })
     .addAction({ capture: true }, async ({ body }, { gotoFlow, flowDynamic, state }) => {
-        const confirmationWords = [
-            "si",
-            "claro",
-            "por supuesto",
-            "vale",
-            "ok",
-            "de acuerdo",
-            "entendido",
-            "dale",
-            "genial",
-            "confirmo",
-            "confirmar",
-            "afirmativo",
-            "correcto",
-            "exacto",
-            "perfecto",
-            "eso es",
-            "por supuesto",
-            "de acuerdo",
-            "sin problema",
-            "seguro",
-            "claro que sí",
-            "todo bien",
-            "obvio",
-            "por supuesto que sí",
-            "lo tengo",
-            "entendido",
-            "hecho",
-            "va",
-            "listo",
-            "es cierto"
-        ];
-        if (confirmationWords.some((word) => body.toLowerCase().includes(word))) {
+        if (body.trim().toLowerCase().includes("si")) {
             return gotoFlow(flowConfirm);
         }
         await flowDynamic("¿Alguna otra fecha y hora?");
@@ -197,7 +166,3 @@ const flowSchedule = addKeyword(EVENTS.ACTION)
     });
 
 export { flowSchedule };
-    function localIsBefore(nextAvailableDate: Date, startOfDay: any) {
-        throw new Error("Function not implemented.");
-    }
-
