@@ -112,4 +112,3 @@ const processTurnos = async () => {
 processTurnos();
 
 export { getCurrentCalendar, addToCalendar };
-
