@@ -1,5 +1,5 @@
 import { MAKE_ADD_TO_CALENDAR, MAKE_GET_FROM_CALENDAR } from 'src/config';
-import { format, parse } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 
 /**
  * Obtener el calendario actual desde la API
@@ -20,8 +20,14 @@ const getCurrentCalendar = async (): Promise<string[]> => {
         const rawResponse = await response.text();
         console.log("Datos crudos de la API:", rawResponse);
 
-        // Intentar parsear la respuesta JSON
-        const json: { date: string; name: string; email: string | null }[] = JSON.parse(rawResponse);
+        // Validar si la respuesta es JSON antes de intentar parsear
+        let json: { date: string; name: string; email: string | null }[] = [];
+        try {
+            json = JSON.parse(rawResponse);
+        } catch (error) {
+            console.error("La respuesta no es un JSON válido:", rawResponse);
+            return [];
+        }
 
         console.log("Respuesta de la API como JSON:", json);
 
@@ -36,7 +42,7 @@ const getCurrentCalendar = async (): Promise<string[]> => {
             })
             .map(({ date, name }) => {
                 try {
-                    const formattedDate = format(parse(date, 'yyyy/MM/dd HH:mm:ss', new Date()), 'yyyy/MM/dd HH:mm:ss');
+                    const formattedDate = format(parseISO(date), 'yyyy/MM/dd HH:mm:ss');
                     return `${name}, ${formattedDate}`;
                 } catch (err) {
                     console.error("Error al procesar fecha:", err, date);
@@ -62,10 +68,10 @@ const getCurrentCalendar = async (): Promise<string[]> => {
  * @param payload Datos del turno
  * @returns Respuesta de la API
  */
-const appToCalendar = async (payload: { name: string; email: string; startDate: string; phone: string }) => {
+const addToCalendar = async (payload: { name: string; email: string; startDate: string; phone: string }) => {
     try {
         // Formatear la fecha correctamente
-        const formattedStartDate = format(parse(payload.startDate, 'yyyy/MM/dd HH:mm:ss', new Date()), 'yyyy/MM/dd HH:mm:ss');
+        const formattedStartDate = format(parseISO(payload.startDate), 'yyyy/MM/dd HH:mm:ss');
 
         // Crear el payload con la fecha formateada
         const formattedPayload = {
@@ -105,4 +111,5 @@ const processTurnos = async () => {
 // Ejecutar la función principal
 processTurnos();
 
-export { getCurrentCalendar, appToCalendar };
+export { getCurrentCalendar, addToCalendar };
+
